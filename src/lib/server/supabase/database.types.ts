@@ -97,6 +97,7 @@ export interface Database {
           user_id: string;
           title: string;
           scenario_id: string | null;
+          pinned: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -106,6 +107,7 @@ export interface Database {
           user_id: string;
           title?: string;
           scenario_id?: string | null;
+          pinned?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -115,6 +117,7 @@ export interface Database {
           user_id?: string;
           title?: string;
           scenario_id?: string | null;
+          pinned?: boolean;
           created_at?: string;
           updated_at?: string;
         };

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   Copy,
@@ -22,10 +22,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  deleteChatThreadApi,
+  duplicateChatThreadApi,
+  isPersistedChatThreadId,
+  patchChatThreadApi,
+} from "@/lib/chat/chat-backend-client";
+import { alertThreadHistoryMutationError } from "@/lib/chat/thread-history-mutation-errors";
+import {
   CHAT_THREADS_CHANGED_EVENT,
   mutateChatThreads,
   readChatThreads,
-  setThreadPinned,
 } from "@/lib/history/chat-threads-storage";
 import { NEW_CHAT_THREAD_ID } from "@/lib/mock/chats";
 import type { ChatThread } from "@/types";
@@ -138,46 +144,115 @@ function HistoryRow({
   thread: ChatThread;
   active: boolean;
 }) {
+  const router = useRouter();
   const href = `/chat?chat=${encodeURIComponent(thread.id)}`;
 
   const onPin = () => {
-    const nextPinned = !thread.pinned;
-    setThreadPinned(thread.id, nextPinned);
-    mutateChatThreads((prev) =>
-      prev.map((x) =>
-        x.id === thread.id ? { ...x, pinned: nextPinned } : x,
-      ),
-    );
+    void (async () => {
+      const nextPinned = !thread.pinned;
+      if (!isPersistedChatThreadId(thread.id)) {
+        mutateChatThreads((prev) =>
+          prev.map((x) =>
+            x.id === thread.id ? { ...x, pinned: nextPinned } : x,
+          ),
+        );
+        return;
+      }
+      const r = await patchChatThreadApi(thread.id, { pinned: nextPinned });
+      if (r.kind === "ok") {
+        mutateChatThreads((prev) =>
+          prev.map((x) => (x.id === thread.id ? r.thread : x)),
+        );
+        return;
+      }
+      if (r.kind === "http_error" && r.status === 400) return;
+      alertThreadHistoryMutationError(r);
+    })();
   };
 
   const onRename = () => {
-    const next = window.prompt("Название чата", thread.title);
-    if (next == null || !next.trim()) return;
-    mutateChatThreads((prev) =>
-      prev.map((x) => (x.id === thread.id ? { ...x, title: next.trim() } : x)),
-    );
+    void (async () => {
+      const next = window.prompt("Название чата", thread.title);
+      if (next == null || !next.trim()) return;
+      const title = next.trim();
+      if (!isPersistedChatThreadId(thread.id)) {
+        mutateChatThreads((prev) =>
+          prev.map((x) => (x.id === thread.id ? { ...x, title } : x)),
+        );
+        return;
+      }
+      const r = await patchChatThreadApi(thread.id, { title });
+      if (r.kind === "ok") {
+        mutateChatThreads((prev) =>
+          prev.map((x) => (x.id === thread.id ? r.thread : x)),
+        );
+        return;
+      }
+      if (r.kind === "http_error" && r.status === 400) return;
+      alertThreadHistoryMutationError(r);
+    })();
   };
 
   const onDelete = () => {
-    if (!window.confirm("Удалить чат из истории? (демо)")) return;
-    mutateChatThreads((prev) => prev.filter((x) => x.id !== thread.id));
+    void (async () => {
+      const ok = window.confirm(
+        isPersistedChatThreadId(thread.id)
+          ? "Удалить чат? Все сообщения будут удалены безвозвратно."
+          : "Удалить чат из истории? (локальный демо-чат)",
+      );
+      if (!ok) return;
+
+      if (!isPersistedChatThreadId(thread.id)) {
+        mutateChatThreads((prev) => prev.filter((x) => x.id !== thread.id));
+        if (active) router.push(`/chat?chat=${encodeURIComponent(NEW_CHAT_THREAD_ID)}`);
+        return;
+      }
+
+      const r = await deleteChatThreadApi(thread.id);
+      if (r.kind === "ok") {
+        mutateChatThreads((prev) => prev.filter((x) => x.id !== thread.id));
+        if (active) router.push(`/chat?chat=${encodeURIComponent(NEW_CHAT_THREAD_ID)}`);
+        return;
+      }
+      if (r.kind === "http_error" && r.status === 400) return;
+      alertThreadHistoryMutationError(r);
+    })();
   };
 
   const onDuplicate = () => {
-    // TODO: дублирование треда через API, когда появится endpoint
-    const copy: ChatThread = {
-      ...thread,
-      id: `chat-${Date.now()}`,
-      title: `${thread.title} (копия)`,
-      updatedAt: new Date().toISOString(),
-      pinned: false,
-    };
-    mutateChatThreads((prev) => {
-      const idx = prev.findIndex((x) => x.id === thread.id);
-      const next = [...prev];
-      next.splice(idx + 1, 0, copy);
-      return next;
-    });
+    void (async () => {
+      if (!isPersistedChatThreadId(thread.id)) {
+        const copy: ChatThread = {
+          ...thread,
+          id: `chat-${Date.now()}`,
+          title: `${thread.title} (копия)`,
+          updatedAt: new Date().toISOString(),
+          pinned: false,
+        };
+        mutateChatThreads((prev) => {
+          const idx = prev.findIndex((x) => x.id === thread.id);
+          const next = [...prev];
+          next.splice(idx + 1, 0, copy);
+          return next;
+        });
+        router.push(`/chat?chat=${encodeURIComponent(copy.id)}`);
+        return;
+      }
+
+      const r = await duplicateChatThreadApi(thread.id);
+      if (r.kind === "ok") {
+        mutateChatThreads((prev) => {
+          const idx = prev.findIndex((x) => x.id === thread.id);
+          const next = [...prev];
+          next.splice(idx + 1, 0, r.thread);
+          return next;
+        });
+        router.push(`/chat?chat=${encodeURIComponent(r.thread.id)}`);
+        return;
+      }
+      if (r.kind === "http_error" && r.status === 400) return;
+      alertThreadHistoryMutationError(r);
+    })();
   };
 
   return (

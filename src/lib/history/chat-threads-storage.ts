@@ -11,38 +11,8 @@ import {
 import type { ChatThread } from "@/types";
 
 const STORAGE_KEY = "rg_chat_threads_v1";
-const PINS_KEY = "rg_chat_pins_v1";
 
 export const CHAT_THREADS_CHANGED_EVENT = "rg_chat_threads_changed";
-
-function readThreadPinsMap(): Record<string, boolean> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = sessionStorage.getItem(PINS_KEY);
-    if (!raw) return {};
-    const p = JSON.parse(raw) as Record<string, boolean>;
-    return p && typeof p === "object" ? p : {};
-  } catch {
-    return {};
-  }
-}
-
-function applyPinsToThreads(threads: ChatThread[]): ChatThread[] {
-  const pins = readThreadPinsMap();
-  return threads.map((t) => ({
-    ...t,
-    pinned: pins[t.id] === true ? true : Boolean(t.pinned),
-  }));
-}
-
-/** Сохранить закрепление отдельно от списка (переживает sync с API). */
-export function setThreadPinned(threadId: string, pinned: boolean): void {
-  if (typeof window === "undefined") return;
-  const pins = readThreadPinsMap();
-  if (pinned) pins[threadId] = true;
-  else delete pins[threadId];
-  sessionStorage.setItem(PINS_KEY, JSON.stringify(pins));
-}
 
 /** Всегда держим слот «Новый чат» сверху списка. */
 export function withNewChatThreadSlot(threads: ChatThread[]): ChatThread[] {
@@ -71,7 +41,7 @@ export function readChatThreads(): ChatThread[] {
       ...p,
       lastMessagePreview: p.lastMessagePreview ?? "",
     }));
-    return withNewChatThreadSlot(applyPinsToThreads(mapped));
+    return withNewChatThreadSlot(mapped);
   } catch {
     return withNewChatThreadSlot(mockChatThreads);
   }
@@ -92,7 +62,7 @@ export function mutateChatThreads(
 }
 
 /**
- * Подтягивает треды с /api/chats и кладёт в sessionStorage (+ слот «Новый чат», закрепы).
+ * Подтягивает треды с /api/chats и кладёт в sessionStorage (+ слот «Новый чат»).
  * @returns true если API ответил 200 и список обновлён
  */
 export async function syncChatThreadsFromBackend(): Promise<boolean> {
@@ -101,12 +71,7 @@ export async function syncChatThreadsFromBackend(): Promise<boolean> {
 
   if (result.kind === "ok") {
     clearChatApiBanner();
-    const pins = readThreadPinsMap();
-    const withPins = result.threads.map((t) => ({
-      ...t,
-      pinned: Boolean(pins[t.id]),
-    }));
-    const withSlot = withNewChatThreadSlot(withPins);
+    const withSlot = withNewChatThreadSlot(result.threads);
     writeChatThreads(withSlot);
     return true;
   }

@@ -128,6 +128,66 @@ export async function getThreadById(
   return data;
 }
 
+export async function updateThreadForUser(
+  supabase: SupabaseClient<Database>,
+  params: {
+    threadId: string;
+    organizationId: string;
+    userId: string;
+    title?: string;
+    pinned?: boolean;
+  },
+) {
+  const patch: Database["public"]["Tables"]["chat_threads"]["Update"] = {};
+  if (params.title !== undefined) patch.title = params.title;
+  if (params.pinned !== undefined) patch.pinned = params.pinned;
+  if (Object.keys(patch).length === 0) {
+    return getThreadForUser(
+      supabase,
+      params.threadId,
+      params.organizationId,
+      params.userId,
+    );
+  }
+
+  const { data, error } = await supabase
+    .from("chat_threads")
+    .update(patch)
+    .eq("id", params.threadId)
+    .eq("organization_id", params.organizationId)
+    .eq("user_id", params.userId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    throw new ApiError(error.message, 500, "thread_update_failed");
+  }
+  return data;
+}
+
+export async function deleteThreadForUser(
+  supabase: SupabaseClient<Database>,
+  threadId: string,
+  organizationId: string,
+  userId: string,
+) {
+  const { data, error } = await supabase
+    .from("chat_threads")
+    .delete()
+    .eq("id", threadId)
+    .eq("organization_id", organizationId)
+    .eq("user_id", userId)
+    .select("id");
+
+  if (error) {
+    throw new ApiError(error.message, 500, "thread_delete_failed");
+  }
+  if (!data?.length) {
+    return null;
+  }
+  return data[0];
+}
+
 export async function ensureThreadForUser(
   supabase: SupabaseClient<Database>,
   params: {

@@ -2,7 +2,7 @@
  * Клиент foundation chat API.
  * 401/403 — отдельные исходы (без демо-fallback).
  * Демо-fallback только при сетевой ошибке / таймауте (см. ChatWorkspace).
- * TODO: PATCH/DELETE тредов, вложения в сообщениях.
+ * TODO: вложения в сообщениях.
  */
 
 import { NEW_CHAT_THREAD_ID } from "@/lib/mock/chats";
@@ -25,6 +25,7 @@ type ApiThread = {
   id: string;
   title: string;
   scenarioId: string | null;
+  pinned?: boolean;
   updatedAt: string;
   createdAt?: string;
 };
@@ -81,6 +82,7 @@ export function mapApiThreadToChatThread(row: ApiThread): ChatThread {
     updatedAt: row.updatedAt,
     modelLabel: "Auto",
     lastMessagePreview: "",
+    pinned: Boolean(row.pinned),
   };
 }
 
@@ -192,6 +194,100 @@ export async function postChatMessageToApi(
         thread: data.thread,
         messages: data.messages.map(mapApiMessageToChatMessage),
       },
+    };
+  } catch {
+    return { kind: "network" };
+  }
+}
+
+export type ChatThreadMutationResult =
+  | { kind: "ok"; thread: ChatThread }
+  | { kind: "unauthorized" }
+  | { kind: "forbidden" }
+  | { kind: "http_error"; status: number }
+  | { kind: "network" };
+
+export async function patchChatThreadApi(
+  threadId: string,
+  body: { title?: string; pinned?: boolean },
+): Promise<ChatThreadMutationResult> {
+  if (!isPersistedChatThreadId(threadId)) {
+    return { kind: "http_error", status: 400 };
+  }
+  const tag = await chatFetchResponse(`/api/chats/${threadId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (tag.tag === "unauthorized") return { kind: "unauthorized" };
+  if (tag.tag === "forbidden") return { kind: "forbidden" };
+  if (tag.tag === "http_error") return { kind: "http_error", status: tag.status };
+  if (tag.tag === "network") return { kind: "network" };
+  try {
+    const data = (await tag.res.json()) as { thread?: ApiThread };
+    if (!data.thread) return { kind: "http_error", status: tag.res.status };
+    return { kind: "ok", thread: mapApiThreadToChatThread(data.thread) };
+  } catch {
+    return { kind: "network" };
+  }
+}
+
+export type ChatThreadDeleteResult =
+  | { kind: "ok" }
+  | { kind: "unauthorized" }
+  | { kind: "forbidden" }
+  | { kind: "http_error"; status: number }
+  | { kind: "network" };
+
+export async function deleteChatThreadApi(
+  threadId: string,
+): Promise<ChatThreadDeleteResult> {
+  if (!isPersistedChatThreadId(threadId)) {
+    return { kind: "http_error", status: 400 };
+  }
+  const tag = await chatFetchResponse(`/api/chats/${threadId}`, {
+    method: "DELETE",
+  });
+  if (tag.tag === "unauthorized") return { kind: "unauthorized" };
+  if (tag.tag === "forbidden") return { kind: "forbidden" };
+  if (tag.tag === "http_error") return { kind: "http_error", status: tag.status };
+  if (tag.tag === "network") return { kind: "network" };
+  return { kind: "ok" };
+}
+
+export type ChatThreadDuplicateResult =
+  | { kind: "ok"; thread: ChatThread; messagesCopied: number }
+  | { kind: "unauthorized" }
+  | { kind: "forbidden" }
+  | { kind: "http_error"; status: number }
+  | { kind: "network" };
+
+export async function duplicateChatThreadApi(
+  threadId: string,
+  options?: { title?: string },
+): Promise<ChatThreadDuplicateResult> {
+  if (!isPersistedChatThreadId(threadId)) {
+    return { kind: "http_error", status: 400 };
+  }
+  const tag = await chatFetchResponse(`/api/chats/${threadId}/duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: options?.title }),
+  });
+  if (tag.tag === "unauthorized") return { kind: "unauthorized" };
+  if (tag.tag === "forbidden") return { kind: "forbidden" };
+  if (tag.tag === "http_error") return { kind: "http_error", status: tag.status };
+  if (tag.tag === "network") return { kind: "network" };
+  try {
+    const data = (await tag.res.json()) as {
+      thread?: ApiThread;
+      messagesCopied?: number;
+    };
+    if (!data.thread) return { kind: "http_error", status: tag.res.status };
+    return {
+      kind: "ok",
+      thread: mapApiThreadToChatThread(data.thread),
+      messagesCopied: data.messagesCopied ?? 0,
     };
   } catch {
     return { kind: "network" };

@@ -31,7 +31,7 @@ export interface ChatThread {
   modelLabel: string;
   /** Короткий preview последнего сообщения (для списков / истории) */
   lastMessagePreview: string;
-  /** Закреплён вверху списка (mock). */
+  /** Закреплён вверху списка (для UUID-тредов — из API). */
   pinned?: boolean;
 }
 

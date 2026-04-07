@@ -5,7 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { isPersistedChatThreadId, patchChatThreadApi } from "@/lib/chat/chat-backend-client";
 import { resolveActiveChatKey } from "@/lib/chat/resolve-active-chat-key";
+import { alertThreadHistoryMutationError } from "@/lib/chat/thread-history-mutation-errors";
 import {
   CHAT_THREADS_CHANGED_EVENT,
   mutateChatThreads,
@@ -46,13 +48,28 @@ export function WorkspaceChatHeaderTitle() {
     activeKey !== NEW_CHAT_THREAD_ID && !activeKey.startsWith("virtual:");
 
   const onRename = () => {
-    const t = threads.find((c) => c.id === activeKey);
-    if (!t) return;
-    const next = window.prompt("Название чата", t.title);
-    if (next == null || !next.trim()) return;
-    mutateChatThreads((prev) =>
-      prev.map((x) => (x.id === activeKey ? { ...x, title: next.trim() } : x)),
-    );
+    void (async () => {
+      const t = threads.find((c) => c.id === activeKey);
+      if (!t) return;
+      const next = window.prompt("Название чата", t.title);
+      if (next == null || !next.trim()) return;
+      const title = next.trim();
+      if (!isPersistedChatThreadId(activeKey)) {
+        mutateChatThreads((prev) =>
+          prev.map((x) => (x.id === activeKey ? { ...x, title } : x)),
+        );
+        return;
+      }
+      const r = await patchChatThreadApi(activeKey, { title });
+      if (r.kind === "ok") {
+        mutateChatThreads((prev) =>
+          prev.map((x) => (x.id === activeKey ? r.thread : x)),
+        );
+        return;
+      }
+      if (r.kind === "http_error" && r.status === 400) return;
+      alertThreadHistoryMutationError(r);
+    })();
   };
 
   return (

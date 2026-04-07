@@ -3,13 +3,17 @@ import { randomUUID } from "crypto";
 import { appendAuditEvent } from "@/lib/server/audit/append";
 import { ApiError } from "@/lib/server/errors";
 import {
+  deleteThreadForUser,
   ensureThreadForUser,
   getThreadForUser,
   insertMessage,
+  insertThread,
   listMessagesForThread,
   listThreadsForUserOrg,
   touchThreadUpdatedAt,
+  updateThreadForUser,
 } from "@/lib/server/repositories/chat-repository";
+import type { Json } from "@/lib/server/supabase/database.types";
 import { createServerSupabaseClient } from "@/lib/server/supabase/server";
 
 const PLACEHOLDER_ASSISTANT =
@@ -23,6 +27,7 @@ export function mapThreadRow(row: {
   id: string;
   title: string;
   scenario_id: string | null;
+  pinned?: boolean;
   updated_at: string;
   created_at: string;
 }) {
@@ -30,6 +35,7 @@ export function mapThreadRow(row: {
     id: row.id,
     title: row.title,
     scenarioId: row.scenario_id,
+    pinned: Boolean(row.pinned),
     updatedAt: toIso(row.updated_at),
     createdAt: toIso(row.created_at),
   };
@@ -88,6 +94,119 @@ export async function serviceCreateThread(
     scenarioId: input.scenarioId,
   });
   return mapThreadRow(thread);
+}
+
+export async function serviceUpdateThread(
+  userId: string,
+  organizationId: string,
+  threadId: string,
+  input: { title?: string; pinned?: boolean },
+) {
+  if (input.title === undefined && input.pinned === undefined) {
+    throw new ApiError(
+      "title or pinned is required",
+      400,
+      "validation_error",
+    );
+  }
+  if (input.title !== undefined && !input.title.trim()) {
+    throw new ApiError("title must not be empty", 400, "validation_error");
+  }
+  const supabase = await createServerSupabaseClient();
+  const updated = await updateThreadForUser(supabase, {
+    threadId,
+    organizationId,
+    userId,
+    ...(input.title !== undefined
+      ? { title: input.title.trim() }
+      : {}),
+    ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
+  });
+  if (!updated) {
+    throw new ApiError("Thread not found", 404, "thread_not_found");
+  }
+  return mapThreadRow(updated);
+}
+
+export async function serviceDeleteThread(
+  userId: string,
+  organizationId: string,
+  threadId: string,
+) {
+  const supabase = await createServerSupabaseClient();
+  const row = await deleteThreadForUser(
+    supabase,
+    threadId,
+    organizationId,
+    userId,
+  );
+  if (!row) {
+    throw new ApiError("Thread not found", 404, "thread_not_found");
+  }
+}
+
+/** MVP: new thread + shallow copy of all messages (same text/role/metadata). */
+export async function serviceDuplicateThread(
+  userId: string,
+  organizationId: string,
+  sourceThreadId: string,
+  options?: { title?: string },
+) {
+  const supabase = await createServerSupabaseClient();
+  const source = await getThreadForUser(
+    supabase,
+    sourceThreadId,
+    organizationId,
+    userId,
+  );
+  if (!source) {
+    throw new ApiError("Thread not found", 404, "thread_not_found");
+  }
+
+  const messages = await listMessagesForThread(
+    supabase,
+    sourceThreadId,
+    organizationId,
+  );
+
+  const baseTitle = source.title.trim() || "Новый чат";
+  const duplicateTitle =
+    options?.title?.trim() || `${baseTitle} (копия)`;
+
+  const newThread = await insertThread(supabase, {
+    organization_id: organizationId,
+    user_id: userId,
+    title: duplicateTitle,
+    scenario_id: source.scenario_id,
+    pinned: false,
+  });
+
+  for (const m of messages) {
+    await insertMessage(supabase, {
+      organization_id: organizationId,
+      thread_id: newThread.id,
+      user_id: m.user_id,
+      role: m.role,
+      content: m.content,
+      metadata: (m.metadata ?? {}) as Json,
+    });
+  }
+
+  await touchThreadUpdatedAt(supabase, newThread.id);
+
+  const fresh = await getThreadForUser(
+    supabase,
+    newThread.id,
+    organizationId,
+    userId,
+  );
+  if (!fresh) {
+    throw new ApiError("Thread not found", 404, "thread_not_found");
+  }
+  return {
+    thread: mapThreadRow(fresh),
+    messagesCopied: messages.length,
+  };
 }
 
 export async function serviceListMessages(
