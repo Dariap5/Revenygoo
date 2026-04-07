@@ -12,10 +12,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { signOutApp } from "@/lib/auth/sign-out-app";
 import {
   displayNameFromLogin,
   getUserInitials,
-  logoutWorkspaceSession,
   readWorkspaceSession,
   type WorkspaceSessionV1,
 } from "@/lib/session/workspace-session";
@@ -45,8 +45,10 @@ export function WorkspaceUserFooter({ collapsed }: { collapsed?: boolean }) {
     "Сотрудник";
 
   const logout = () => {
-    logoutWorkspaceSession();
-    router.push("/login");
+    void (async () => {
+      await signOutApp();
+      router.push("/login");
+    })();
   };
 
   const menu = (

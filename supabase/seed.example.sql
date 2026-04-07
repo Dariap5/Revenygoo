@@ -1,0 +1,11 @@
+-- Example: after you sign up (Auth → Users), copy the user UUID and run:
+--
+-- INSERT INTO public.organizations (id, name, slug)
+-- VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Demo Org', 'demo');
+--
+-- INSERT INTO public.organization_members (organization_id, user_id, role)
+-- VALUES (
+--   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+--   'YOUR_AUTH_USER_UUID',
+--   'owner'
+-- );

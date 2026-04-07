@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+import { trySyncWorkspaceSessionFromSupabase } from "@/lib/auth/sync-workspace-from-supabase";
 import {
   getPostAuthPath,
   readWorkspaceSession,
@@ -12,7 +13,15 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace(getPostAuthPath(readWorkspaceSession()));
+    let cancelled = false;
+    (async () => {
+      await trySyncWorkspaceSessionFromSupabase();
+      if (cancelled) return;
+      router.replace(getPostAuthPath(readWorkspaceSession()));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return (

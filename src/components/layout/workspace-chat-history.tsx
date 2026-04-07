@@ -25,6 +25,7 @@ import {
   CHAT_THREADS_CHANGED_EVENT,
   mutateChatThreads,
   readChatThreads,
+  setThreadPinned,
 } from "@/lib/history/chat-threads-storage";
 import { NEW_CHAT_THREAD_ID } from "@/lib/mock/chats";
 import type { ChatThread } from "@/types";
@@ -140,9 +141,11 @@ function HistoryRow({
   const href = `/chat?chat=${encodeURIComponent(thread.id)}`;
 
   const onPin = () => {
+    const nextPinned = !thread.pinned;
+    setThreadPinned(thread.id, nextPinned);
     mutateChatThreads((prev) =>
       prev.map((x) =>
-        x.id === thread.id ? { ...x, pinned: !x.pinned } : x,
+        x.id === thread.id ? { ...x, pinned: nextPinned } : x,
       ),
     );
   };
@@ -161,6 +164,7 @@ function HistoryRow({
   };
 
   const onDuplicate = () => {
+    // TODO: дублирование треда через API, когда появится endpoint
     const copy: ChatThread = {
       ...thread,
       id: `chat-${Date.now()}`,

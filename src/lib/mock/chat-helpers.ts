@@ -1,5 +1,8 @@
-import { mockChatThreads } from "./chats";
+import type { ChatThread } from "@/types";
 
-export function getDefaultChatIdForScenario(scenarioId: string) {
-  return mockChatThreads.find((c) => c.scenarioId === scenarioId)?.id;
+export function getDefaultChatIdForScenario(
+  scenarioId: string,
+  threads: ChatThread[],
+) {
+  return threads.find((c) => c.scenarioId === scenarioId)?.id;
 }

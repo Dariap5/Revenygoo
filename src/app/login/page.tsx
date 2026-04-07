@@ -4,16 +4,30 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
-import { readWorkspaceSession } from "@/lib/session/workspace-session";
+import { isDemoLoginEnabled } from "@/lib/auth/demo-login-flag";
+import { trySyncWorkspaceSessionFromSupabase } from "@/lib/auth/sync-workspace-from-supabase";
+import {
+  getPostAuthPath,
+  readWorkspaceSession,
+} from "@/lib/session/workspace-session";
 
 export default function LoginPage() {
   const router = useRouter();
+  const demoEnabled = isDemoLoginEnabled();
 
   useEffect(() => {
-    const s = readWorkspaceSession();
-    if (s.authenticated && s.profile && s.personalizationViewed && s.aiGuideCompleted) {
-      router.replace("/scenarios");
-    }
+    let cancelled = false;
+    (async () => {
+      await trySyncWorkspaceSessionFromSupabase();
+      if (cancelled) return;
+      const s = readWorkspaceSession();
+      if (s.authenticated) {
+        router.replace(getPostAuthPath(s));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return (
@@ -27,10 +41,12 @@ export default function LoginPage() {
         </span>
       </div>
       <LoginForm />
-      <p className="mt-4 max-w-sm text-center text-sm text-[hsl(var(--muted-foreground))]">
-        Демо: пароль{" "}
-        <span className="font-mono font-medium text-[hsl(var(--foreground))]">demo</span>
-      </p>
+      {demoEnabled ? (
+        <p className="mt-4 max-w-sm text-center text-sm text-[hsl(var(--muted-foreground))]">
+          Демо-режим: пароль{" "}
+          <span className="font-mono font-medium text-[hsl(var(--foreground))]">demo</span>
+        </p>
+      ) : null}
     </div>
   );
 }

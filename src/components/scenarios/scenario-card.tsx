@@ -1,7 +1,10 @@
+"use client";
+
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { getDefaultChatIdForScenario } from "@/lib/mock/chat-helpers";
+import { readChatThreads } from "@/lib/history/chat-threads-storage";
 import { scenarioIconGradientStyle } from "@/lib/scenarios/scenario-icon-gradient";
 import type { Scenario } from "@/types";
 
@@ -9,7 +12,7 @@ import { ModelBadge } from "./model-badge";
 import { ScenarioIcon } from "./scenario-icon";
 
 export function ScenarioCard({ scenario }: { scenario: Scenario }) {
-  const chatId = getDefaultChatIdForScenario(scenario.id);
+  const chatId = getDefaultChatIdForScenario(scenario.id, readChatThreads());
   const href = chatId
     ? `/chat?chat=${chatId}`
     : `/chat?scenario=${scenario.id}`;

@@ -5,9 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { Camera } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { signOutApp } from "@/lib/auth/sign-out-app";
 import {
   displayNameFromLogin,
-  logoutWorkspaceSession,
   readWorkspaceSession,
   type WorkspaceSessionV1,
 } from "@/lib/session/workspace-session";
@@ -251,8 +251,10 @@ export function EmployeeProfilePage() {
           variant="outline"
           className="rounded-xl text-destructive hover:bg-destructive/5 hover:text-destructive"
           onClick={() => {
-            logoutWorkspaceSession();
-            router.push("/login");
+            void (async () => {
+              await signOutApp();
+              router.push("/login");
+            })();
           }}
         >
           Выйти из аккаунта

@@ -5,6 +5,8 @@ import { Suspense, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { HelpCircle, MessageSquare, Share2 } from "lucide-react";
 
+import { ChatBackendBanner } from "@/components/chat/chat-backend-banner";
+import { syncChatThreadsFromBackend } from "@/lib/history/chat-threads-storage";
 import { cn } from "@/lib/utils";
 
 import { WorkspaceChatHeaderTitle } from "./workspace-chat-header-title";
@@ -34,6 +36,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     document.documentElement.setAttribute("data-accent", accent);
     const dark = localStorage.getItem("theme_dark") === "true";
     document.documentElement.classList.toggle("dark", dark);
+  }, []);
+
+  useEffect(() => {
+    void syncChatThreadsFromBackend();
   }, []);
 
   const subtleBtn =
@@ -98,6 +104,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </header>
+        <ChatBackendBanner />
         <main
           className={cn(
             "min-h-0 flex-1",

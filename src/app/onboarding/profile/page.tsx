@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { ProfileOnboardingWizard } from "@/components/onboarding/profile-onboarding-wizard";
+import { trySyncWorkspaceSessionFromSupabase } from "@/lib/auth/sync-workspace-from-supabase";
 import {
   getPostAuthPath,
   readWorkspaceSession,
@@ -14,15 +15,23 @@ export default function ProfileOnboardingPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const s = readWorkspaceSession();
-    if (!s.authenticated) {
-      router.replace("/login");
-      return;
-    }
-    const target = getPostAuthPath(s);
-    if (target !== "/onboarding/profile") {
-      router.replace(target);
-    }
+    let cancelled = false;
+    (async () => {
+      await trySyncWorkspaceSessionFromSupabase();
+      if (cancelled) return;
+      const s = readWorkspaceSession();
+      if (!s.authenticated) {
+        router.replace("/login");
+        return;
+      }
+      const target = getPostAuthPath(s);
+      if (target !== "/onboarding/profile") {
+        router.replace(target);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return (

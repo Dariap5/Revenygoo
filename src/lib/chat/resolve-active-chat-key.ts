@@ -12,7 +12,7 @@ export function resolveActiveChatKey(
     return chatParam;
   }
   if (scenarioParam) {
-    const byScenario = getDefaultChatIdForScenario(scenarioParam);
+    const byScenario = getDefaultChatIdForScenario(scenarioParam, threadList);
     if (byScenario && threadList.some((c) => c.id === byScenario)) {
       return byScenario;
     }

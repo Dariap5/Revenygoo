@@ -4,6 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readChatUIPrefs, writeChatUIPrefs } from "@/lib/chat/chat-ui-prefs-storage";
 import {
+  clearChatApiBanner,
+  setChatApiBanner,
+} from "@/lib/chat/chat-api-banner-store";
+import type { ChatMessagesResult } from "@/lib/chat/chat-backend-client";
+import {
+  fetchChatMessagesFromApi,
+  isPersistedChatThreadId,
+  postChatMessageToApi,
+} from "@/lib/chat/chat-backend-client";
+import {
   DEFAULT_UNIFIED_MODEL,
   getUnifiedModelDef,
   gptReasoningLabel,
@@ -12,6 +22,7 @@ import {
 import {
   CHAT_THREADS_CHANGED_EVENT,
   readChatThreads,
+  syncChatThreadsFromBackend,
 } from "@/lib/history/chat-threads-storage";
 import type { ChatQuickAction } from "@/lib/mock/chat-quick-actions";
 import type { ChatPromptTemplate } from "@/lib/mock/chat-templates";
@@ -57,6 +68,37 @@ function firstNameFromSession(): string {
   return full.split(/\s+/)[0] ?? "";
 }
 
+function applyChatMessagesFetchResult(
+  r: ChatMessagesResult,
+  setMsgs: (m: ChatMessage[]) => void,
+): void {
+  if (r.kind === "ok") {
+    clearChatApiBanner();
+    setMsgs(r.messages);
+    return;
+  }
+  if (r.kind === "unauthorized") {
+    setChatApiBanner({ kind: "unauthorized" });
+    setMsgs([]);
+    return;
+  }
+  if (r.kind === "forbidden") {
+    setChatApiBanner({ kind: "forbidden" });
+    setMsgs([]);
+    return;
+  }
+  if (r.kind === "http_error") {
+    setChatApiBanner({
+      kind: "request_failed",
+      detail: `Не удалось загрузить сообщения (HTTP ${r.status}).`,
+    });
+    setMsgs([]);
+    return;
+  }
+  // сеть / таймаут — без демо-подмены истории
+  setMsgs([]);
+}
+
 const DEMO_ASSISTANT_BODY = `Краткий ответ (демо).
 
 \`\`\`typescript
@@ -80,6 +122,7 @@ export function ChatWorkspace({
   const pendingDraftRef = useRef<string | null>(null);
 
   const [threadList, setThreadList] = useState<ChatThread[]>(threads);
+  const [serverMessages, setServerMessages] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
     setThreadList(readChatThreads());
@@ -166,6 +209,25 @@ export function ChatWorkspace({
     setGeminiActiveTools(new Set());
   }, [activeKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!isPersistedChatThreadId(activeThread.id)) {
+      setServerMessages([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    (async () => {
+      const r = await fetchChatMessagesFromApi(activeThread.id);
+      if (!cancelled) {
+        applyChatMessagesFetchResult(r, setServerMessages);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeThread.id]);
+
   const attachedContextIds = useMemo(
     () => contextByChat[activeThread.id] ?? [],
     [contextByChat, activeThread.id],
@@ -175,13 +237,15 @@ export function ChatWorkspace({
     [attachedContextIds],
   );
 
-  const baseMessages = useMemo(
-    () =>
-      activeThread.id.startsWith("virtual:")
-        ? []
-        : (mockMessagesByChatId[activeThread.id] ?? []),
-    [activeThread.id],
-  );
+  const baseMessages = useMemo(() => {
+    if (activeThread.id.startsWith("virtual:")) {
+      return [];
+    }
+    if (isPersistedChatThreadId(activeThread.id)) {
+      return serverMessages;
+    }
+    return mockMessagesByChatId[activeThread.id] ?? [];
+  }, [activeThread.id, serverMessages]);
 
   const messages = useMemo(
     () =>
@@ -313,6 +377,86 @@ export function ChatWorkspace({
     [sendMeta],
   );
 
+  const deliverToBackendOrDemo = useCallback(
+    async (
+      combined: string,
+      files: ChatAttachmentPreview[],
+      fallback: "stub" | "safe-stub",
+    ) => {
+      const trimmed = combined.trim();
+      if (!trimmed && files.length === 0) return;
+      const textPayload = trimmed || "(вложение)";
+      // TODO: прикреплённые файлы — только в демо; загрузка в API позже
+      const needNewPersistedId =
+        activeThread.id === NEW_CHAT_THREAD_ID ||
+        activeThread.id.startsWith("virtual:");
+      const persistedThreadId = needNewPersistedId
+        ? crypto.randomUUID()
+        : activeThread.id;
+      const scenarioForApi =
+        activeThread.scenarioId ?? scenarioParam ?? undefined;
+
+      const clearComposer = () => {
+        setDraft("");
+        setBulkDraft("");
+        setAttachments([]);
+      };
+
+      const posted = await postChatMessageToApi(persistedThreadId, textPayload, {
+        scenarioId: scenarioForApi ?? null,
+        title: activeThread.title,
+      });
+
+      if (posted.kind === "ok") {
+        clearChatApiBanner();
+        if (needNewPersistedId) {
+          const qs = new URLSearchParams({ chat: persistedThreadId });
+          if (scenarioForApi) qs.set("scenario", scenarioForApi);
+          router.replace(`/chat?${qs.toString()}`);
+        }
+        await syncChatThreadsFromBackend();
+        const full = await fetchChatMessagesFromApi(persistedThreadId);
+        applyChatMessagesFetchResult(full, setServerMessages);
+        clearComposer();
+        return;
+      }
+
+      if (posted.kind === "unauthorized") {
+        setChatApiBanner({ kind: "unauthorized" });
+        return;
+      }
+      if (posted.kind === "forbidden") {
+        setChatApiBanner({ kind: "forbidden" });
+        return;
+      }
+      if (posted.kind === "http_error") {
+        setChatApiBanner({
+          kind: "request_failed",
+          detail: `Сообщение не отправлено (HTTP ${posted.status}).`,
+        });
+        return;
+      }
+
+      // Сеть / таймаут — единственный случай демо-fallback
+      clearChatApiBanner();
+      if (fallback === "stub") {
+        appendUserAndStub(combined, files);
+      } else {
+        appendSafeVersionAndStub(combined, files);
+      }
+      clearComposer();
+    },
+    [
+      activeThread.id,
+      activeThread.title,
+      activeThread.scenarioId,
+      scenarioParam,
+      router,
+      appendUserAndStub,
+      appendSafeVersionAndStub,
+    ],
+  );
+
   const onSend = useCallback(() => {
     const parts = [bulkDraft.trim(), draft.trim()].filter(Boolean);
     const combined = parts.join("\n\n");
@@ -323,11 +467,8 @@ export function ChatWorkspace({
       setSafetyOpen(true);
       return;
     }
-    appendUserAndStub(combined, attachments);
-    setDraft("");
-    setBulkDraft("");
-    setAttachments([]);
-  }, [appendUserAndStub, draft, bulkDraft, attachments]);
+    void deliverToBackendOrDemo(combined, attachments, "stub");
+  }, [deliverToBackendOrDemo, draft, bulkDraft, attachments]);
 
   const onSafetyBack = useCallback(() => {
     setSafetyOpen(false);
@@ -336,13 +477,14 @@ export function ChatWorkspace({
 
   const onSendSafeVersion = useCallback(() => {
     if (!pendingSafety) return;
-    appendSafeVersionAndStub(pendingSafety.safeText, attachments);
-    setDraft("");
-    setBulkDraft("");
-    setAttachments([]);
+    void deliverToBackendOrDemo(
+      pendingSafety.safeText,
+      attachments,
+      "safe-stub",
+    );
     setSafetyOpen(false);
     setPendingSafety(null);
-  }, [appendSafeVersionAndStub, pendingSafety, attachments]);
+  }, [deliverToBackendOrDemo, pendingSafety, attachments]);
 
   const onRegenerate = useCallback(() => {
     const combined = [...baseMessages, ...localMessages];
@@ -400,9 +542,15 @@ export function ChatWorkspace({
           onOpenContextPicker={() => setContextPickerOpen(true)}
           onClearLocalMock={() => {
             setLocalMessages([]);
+            setAssistantOverrides({});
             setDraft("");
             setBulkDraft("");
             setAttachments([]);
+            if (isPersistedChatThreadId(activeThread.id)) {
+              void fetchChatMessagesFromApi(activeThread.id).then((r) => {
+                applyChatMessagesFetchResult(r, setServerMessages);
+              });
+            }
           }}
         />
         <ChatContextBar
