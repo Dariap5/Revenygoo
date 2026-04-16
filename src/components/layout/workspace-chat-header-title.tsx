@@ -21,6 +21,7 @@ export function WorkspaceChatHeaderTitle() {
   const searchParams = useSearchParams();
   const chatParam = searchParams.get("chat");
   const scenarioParam = searchParams.get("scenario");
+  const scenarioTitleParam = searchParams.get("title");
   const [threads, setThreads] = useState<ChatThread[]>(() => readChatThreads());
 
   useEffect(() => {
@@ -38,11 +39,11 @@ export function WorkspaceChatHeaderTitle() {
   const chatTitle = useMemo(() => {
     if (activeKey.startsWith("virtual:")) {
       const sid = activeKey.slice("virtual:".length);
-      return getScenarioById(sid)?.title ?? "Чат";
+      return scenarioTitleParam?.trim() || getScenarioById(sid)?.title || "Чат";
     }
     const t = threads.find((c) => c.id === activeKey);
     return t?.title ?? "Чат";
-  }, [activeKey, threads]);
+  }, [activeKey, threads, scenarioTitleParam]);
 
   const canRename =
     activeKey !== NEW_CHAT_THREAD_ID && !activeKey.startsWith("virtual:");

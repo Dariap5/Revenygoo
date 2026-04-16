@@ -1,156 +1,187 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { applySupabaseUserToWorkspaceSession } from "@/lib/auth/sync-workspace-from-supabase";
-import { isDemoLoginEnabled } from "@/lib/auth/demo-login-flag";
+import { signInAsDemoSupabaseUser } from "@/lib/auth/demo-supabase-sign-in";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createBrowserSupabaseClient } from "@/lib/server/supabase/browser";
 import {
-  defaultWorkspaceSession,
   getPostAuthPath,
-  patchWorkspaceSession,
   readWorkspaceSession,
 } from "@/lib/session/workspace-session";
+import { createBrowserSupabaseClient } from "@/lib/server/supabase/browser";
 
-export function LoginForm() {
+type LoginFormProps = {
+  /** Безопасный внутренний путь после входа (из `?next=`). */
+  nextPath?: string | null;
+};
+
+export function LoginForm({ nextPath = null }: LoginFormProps) {
   const router = useRouter();
-  const [login, setLogin] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const demoEnabled = isDemoLoginEnabled();
+  const [fieldErrors, setFieldErrors] = useState<{
+    email: string | null;
+    password: string | null;
+    demo: string | null;
+  }>({
+    email: null,
+    password: null,
+    demo: null,
+  });
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    const trimmed = login.trim();
-    if (!trimmed) {
-      setError("Введите email.");
-      return;
+  const redirectAfterLogin = () => {
+    const session = readWorkspaceSession();
+    router.push(nextPath ?? getPostAuthPath(session));
+  };
+
+  const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFieldErrors({ email: null, password: null, demo: null });
+
+    const normalizedEmail = email.trim().toLowerCase();
+    let hasValidationError = false;
+    const nextErrors = { email: null, password: null, demo: null } as {
+      email: string | null;
+      password: string | null;
+      demo: string | null;
+    };
+
+    if (!normalizedEmail) {
+      nextErrors.email = "Введите email.";
+      hasValidationError = true;
     }
     if (!password) {
-      setError("Введите пароль.");
+      nextErrors.password = "Введите пароль.";
+      hasValidationError = true;
+    }
+    if (hasValidationError) {
+      setFieldErrors(nextErrors);
       return;
     }
 
-    if (demoEnabled && password === "demo") {
-      const prev = readWorkspaceSession();
-      const base =
-        prev.authenticated && prev.login === trimmed
-          ? prev
-          : { ...defaultWorkspaceSession(), authenticated: true, login: trimmed };
-
-      const next = patchWorkspaceSession({
-        ...base,
-        authenticated: true,
-        login: trimmed,
-      });
-      router.push(getPostAuthPath(next));
-      return;
-    }
-
-    setLoading(true);
+    setSubmitLoading(true);
     try {
       const supabase = createBrowserSupabaseClient();
-      const { data, error: signError } = await supabase.auth.signInWithPassword({
-        email: trimmed,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
         password,
       });
-
-      if (signError) {
-        setError(
-          signError.message === "Invalid login credentials"
-            ? "Неверный email или пароль."
-            : signError.message,
-        );
+      if (error || !data.user) {
+        const message = error?.message ?? "Не удалось войти.";
+        if (message === "Invalid login credentials") {
+          setFieldErrors((prev) => ({
+            ...prev,
+            password: "Неверный email или пароль.",
+          }));
+          return;
+        }
+        setFieldErrors((prev) => ({
+          ...prev,
+          password: message,
+        }));
         return;
       }
-
-      if (!data.user) {
-        setError("Не удалось получить пользователя после входа.");
-        return;
-      }
-
       applySupabaseUserToWorkspaceSession(data.user);
-      const next = readWorkspaceSession();
-      router.push(getPostAuthPath(next));
-    } catch {
-      setError(
-        "Не настроен Supabase (проверьте NEXT_PUBLIC_SUPABASE_URL и ANON KEY) или ошибка сети.",
-      );
+      redirectAfterLogin();
     } finally {
-      setLoading(false);
+      setSubmitLoading(false);
+    }
+  };
+
+  const handleDemoSignIn = async () => {
+    setFieldErrors((prev) => ({ ...prev, demo: null }));
+    setDemoLoading(true);
+    try {
+      const result = await signInAsDemoSupabaseUser();
+      if (!result.ok) {
+        setFieldErrors((prev) => ({ ...prev, demo: result.message }));
+        return;
+      }
+      redirectAfterLogin();
+    } finally {
+      setDemoLoading(false);
     }
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex w-full max-w-sm flex-col gap-3"
-    >
-      <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-semibold text-[hsl(var(--foreground))]">
-          Вход в рабочее место
-        </h1>
-        <p className="text-sm text-[hsl(var(--muted-foreground))]">
-          {demoEnabled
-            ? "Основной вход — Supabase Auth. Демо-режим доступен паролем demo."
-            : "Вход через Supabase Auth (email и пароль)."}
-        </p>
+    <div className="w-full max-w-[400px] rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="mb-6 space-y-2 text-center">
+        <h1 className="text-xl font-semibold text-gray-900">Вход в рабочее место</h1>
+        <p className="text-sm text-gray-500">Введите email и пароль.</p>
       </div>
 
-      <div className="mt-5 space-y-2">
-        <Label htmlFor="login" className="text-sm font-medium text-[hsl(var(--foreground))]">
-          Email
-        </Label>
-        <Input
-          id="login"
-          name="login"
-          type="email"
-          autoComplete="username"
-          placeholder="name@company.ru"
-          value={login}
-          onChange={(e) => setLogin(e.target.value)}
-          disabled={loading}
-        />
+      <form className="space-y-4" onSubmit={handleSignIn} noValidate>
+        <div className="space-y-1.5">
+          <Label htmlFor="login-email" className="text-gray-700">
+            Email
+          </Label>
+          <Input
+            id="login-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="bg-white"
+          />
+          {fieldErrors.email ? (
+            <p className="text-xs text-destructive" role="alert">
+              {fieldErrors.email}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="login-password" className="text-gray-700">
+            Пароль
+          </Label>
+          <Input
+            id="login-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="bg-white"
+          />
+          {fieldErrors.password ? (
+            <p className="text-xs text-destructive" role="alert">
+              {fieldErrors.password}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex justify-end">
+          <Link href="/login/forgot" className="text-sm text-gray-500 hover:text-gray-800">
+            Забыли пароль?
+          </Link>
+        </div>
+
+        <Button type="submit" className="h-10 w-full" disabled={submitLoading || demoLoading}>
+          {submitLoading ? "Вход…" : "Войти"}
+        </Button>
+      </form>
+
+      <div className="mt-6 border-t border-gray-100 pt-4 text-center">
+        <button
+          type="button"
+          onClick={handleDemoSignIn}
+          disabled={submitLoading || demoLoading}
+          className="text-xs text-gray-500 underline-offset-2 hover:text-gray-800 hover:underline disabled:opacity-60"
+        >
+          {demoLoading ? "Вход в демо…" : "Демо-доступ"}
+        </button>
+        {fieldErrors.demo ? (
+          <p className="mt-2 text-xs text-destructive" role="alert">
+            {fieldErrors.demo}
+          </p>
+        ) : null}
       </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="password" className="text-sm font-medium text-[hsl(var(--foreground))]">
-          Пароль
-        </Label>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          disabled={loading}
-        />
-      </div>
-
-      {error ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      <Button type="submit" className="mt-2 h-10 w-full" disabled={loading}>
-        {loading ? "Вход…" : "Войти"}
-      </Button>
-
-      <p className="mt-4 text-center text-sm text-[hsl(var(--muted-foreground))]">
-        Забыли доступ?{" "}
-        <span className="font-medium text-[hsl(var(--foreground))] underline-offset-2 hover:underline">
-          Обратитесь к администратору организации
-        </span>
-      </p>
-    </form>
+    </div>
   );
 }

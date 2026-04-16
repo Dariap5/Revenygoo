@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 import { WorkspaceChatHeaderTitle } from "./workspace-chat-header-title";
 import { WorkspaceSidebar, useWorkspaceSidebarCollapsedInit } from "./workspace-sidebar";
+import { WorkspaceUsageIndicator } from "./workspace-usage-indicator";
 
 function workspacePageTitle(pathname: string): string {
   if (pathname.startsWith("/chat")) return "Чат";
@@ -78,6 +79,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               </span>
             </nav>
           )}
+          <WorkspaceUsageIndicator />
           <div className="flex shrink-0 items-center gap-1">
             <button type="button" className={subtleBtn}>
               Feedback

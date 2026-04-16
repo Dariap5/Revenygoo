@@ -19,9 +19,6 @@ export type AiTaskId =
 export type UserProfileOnboarding = {
   jobTitle: string;
   department: string;
-  taskIds: AiTaskId[];
-  /** Заполняется, если выбрано «Другое» */
-  otherTaskNote: string;
 };
 
 /** Настройки из личного кабинета (mock, localStorage). */
@@ -48,27 +45,19 @@ export type WorkspaceSessionV1 = {
   authenticated: boolean;
   login: string;
   profile: UserProfileOnboarding | null;
-  /** Пользователь прошёл экран персонализации (5 с) */
-  personalizationViewed: boolean;
-  /** Инструкция по ИИ в кабинете просмотрена и принята */
+  /** Первый шаг onboarding: краткие правила ИИ приняты. */
   aiGuideCompleted: boolean;
-  /** Черновик многошагового onboarding (шаг, поля) */
+  /** Черновик onboarding профиля. */
   profileDraft: {
-    stepIndex: number;
     jobTitle: string;
     department: string;
-    taskIds: AiTaskId[];
-    otherTaskNote: string;
   };
   cabinetPreferences: CabinetPreferences;
 };
 
 const emptyDraft = (): WorkspaceSessionV1["profileDraft"] => ({
-  stepIndex: 0,
   jobTitle: "",
   department: "",
-  taskIds: [],
-  otherTaskNote: "",
 });
 
 export function defaultWorkspaceSession(): WorkspaceSessionV1 {
@@ -77,7 +66,6 @@ export function defaultWorkspaceSession(): WorkspaceSessionV1 {
     authenticated: false,
     login: "",
     profile: null,
-    personalizationViewed: false,
     aiGuideCompleted: false,
     profileDraft: emptyDraft(),
     cabinetPreferences: defaultCabinetPreferences(),
@@ -116,9 +104,6 @@ function parseSession(raw: string | null): WorkspaceSessionV1 | null {
       profileDraft: {
         ...emptyDraft(),
         ...v.profileDraft,
-        taskIds: Array.isArray(v.profileDraft?.taskIds)
-          ? (v.profileDraft!.taskIds as AiTaskId[])
-          : [],
       },
       cabinetPreferences: {
         ...defaultCabinetPreferences(),
@@ -165,17 +150,15 @@ export function logoutWorkspaceSession(): void {
 /** Куда перенаправить с главной / из login при текущей сессии */
 export function getPostAuthPath(session: WorkspaceSessionV1): string {
   if (!session.authenticated) return "/login";
+  if (!session.aiGuideCompleted) return "/onboarding";
   if (!session.profile) return "/onboarding/profile";
-  if (!session.personalizationViewed) return "/onboarding/personalizing";
-  if (!session.aiGuideCompleted) return "/onboarding/ai-guide";
-  return "/scenarios";
+  return "/chat";
 }
 
-/** Редиректы внутри маршрутов с WorkspaceShell. Инструкция по ИИ — вне shell: /onboarding/ai-guide */
+/** Редиректы внутри маршрутов с WorkspaceShell. */
 export function workspaceEntryRedirect(session: WorkspaceSessionV1): string | null {
   if (!session.authenticated) return "/login";
+  if (!session.aiGuideCompleted) return "/onboarding";
   if (!session.profile) return "/onboarding/profile";
-  if (!session.personalizationViewed) return "/onboarding/personalizing";
-  if (!session.aiGuideCompleted) return "/onboarding/ai-guide";
   return null;
 }

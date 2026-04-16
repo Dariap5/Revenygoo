@@ -5,12 +5,14 @@ export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url?.trim() || !anon?.trim()) {
+  const anon =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  if (!url?.trim() || !anon) {
     return supabaseResponse;
   }
 
-  const supabase = createServerClient(url, anon, {
+  const supabase = createServerClient(url.trim(), anon, {
     cookies: {
       getAll() {
         return request.cookies.getAll();

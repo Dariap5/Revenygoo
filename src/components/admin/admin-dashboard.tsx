@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { mockAuditLogEvents } from "@/lib/mock/audit-log";
 import { mockKnowledgeSources } from "@/lib/mock/knowledge-sources";
 import { mockModelOptions } from "@/lib/mock/models";
 import {
@@ -40,16 +39,6 @@ function localDateYmd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function isWarningEvent(e: (typeof mockAuditLogEvents)[number]): boolean {
-  return (
-    e.eventType === "safety warning" || e.systemAction === "warned"
-  );
-}
-
-function isBlockedEvent(e: (typeof mockAuditLogEvents)[number]): boolean {
-  return e.eventType === "request blocked" || e.systemAction === "blocked";
-}
-
 const MODEL_LABELS = ["Auto", "GPT", "Claude", "Gemini"] as const;
 
 type SafetyMode = "standard" | "strict";
@@ -58,11 +47,8 @@ export function AdminDashboard() {
   const todayYmd = useMemo(() => localDateYmd(new Date()), []);
 
   const metrics = useMemo(() => {
-    const eventsToday = mockAuditLogEvents.filter((e) =>
-      e.at.startsWith(todayYmd),
-    );
-    const warningsToday = eventsToday.filter(isWarningEvent).length;
-    const blockedToday = eventsToday.filter(isBlockedEvent).length;
+    const warningsToday = 0;
+    const blockedToday = 0;
     const readySources = mockKnowledgeSources.filter(
       (s) => s.status === "ready",
     ).length;
@@ -81,7 +67,7 @@ export function AdminDashboard() {
         (s) => s.status === "processing",
       ).length,
     };
-  }, [todayYmd]);
+  }, []);
 
   const knowledgeSyncing = metrics.syncingSources > 0;
 
@@ -407,9 +393,9 @@ export function AdminDashboard() {
             icon={BookOpen}
           />
           <AdminActionCard
-            href="/admin#admin-models-management"
+            href="/admin/models"
             title="Настройки моделей"
-            description="Проверить доступные модели и значения по умолчанию"
+            description="Провайдер, ключ, модель и проверка подключения"
             icon={Cpu}
           />
         </div>

@@ -1,5 +1,4 @@
 import { ScenarioCatalog } from "@/components/scenarios/scenario-catalog";
-import { mockScenarios } from "@/lib/mock/scenarios";
 
 export default function ScenariosPage() {
   return (
@@ -13,7 +12,7 @@ export default function ScenariosPage() {
           администратор.
         </p>
       </div>
-      <ScenarioCatalog scenarios={mockScenarios} />
+      <ScenarioCatalog />
     </div>
   );
 }

@@ -40,10 +40,16 @@ import { cn } from "@/lib/utils";
 function formatGroupLabel(key: string): string {
   if (key === "today") return "Сегодня";
   if (key === "yesterday") return "Вчера";
+  if (key === "week") return "Эта неделя";
   return "Ранее";
 }
 
-function groupBucket(iso: string): "today" | "yesterday" | "earlier" {
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function groupBucket(iso: string): "today" | "yesterday" | "week" | "earlier" {
   const d = new Date(iso);
   const t0 = new Date();
   t0.setHours(0, 0, 0, 0);
@@ -53,6 +59,8 @@ function groupBucket(iso: string): "today" | "yesterday" | "earlier" {
   day.setHours(0, 0, 0, 0);
   if (day.getTime() === t0.getTime()) return "today";
   if (day.getTime() === t1.getTime()) return "yesterday";
+  const diffDays = Math.floor((t0.getTime() - day.getTime()) / 86_400_000);
+  if (diffDays <= 7) return "week";
   return "earlier";
 }
 
@@ -85,7 +93,7 @@ export function WorkspaceChatHistory({ collapsed }: { collapsed: boolean }) {
   const sorted = useMemo(() => sortThreads(filtered), [filtered]);
 
   const grouped = useMemo(() => {
-    const order = ["today", "yesterday", "earlier"] as const;
+    const order = ["today", "yesterday", "week", "earlier"] as const;
     const map = new Map<string, ChatThread[]>();
     for (const k of order) map.set(k, []);
     for (const t of sorted) {
@@ -266,11 +274,14 @@ function HistoryRow({
             : "text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--border))] hover:bg-[hsl(var(--background-tertiary))] hover:text-[hsl(var(--foreground))]",
         )}
       >
-        <span className="line-clamp-2 min-w-0 flex-1 text-[12px] leading-snug">
+        <span className="min-w-0 flex-1 text-[12px] leading-snug">
           {thread.pinned ? (
             <Pin className="mr-1 inline size-3 shrink-0 opacity-50" aria-hidden />
           ) : null}
-          {thread.title}
+          <span className="line-clamp-1">{thread.title}</span>
+          <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground">
+            {formatTime(thread.updatedAt)}
+          </span>
         </span>
       </Link>
       <div className="absolute right-1 top-1/2 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">

@@ -228,10 +228,22 @@ export async function serviceAppendUserMessageAndPlaceholder(
   organizationId: string,
   threadId: string,
   content: string,
-  options?: { title?: string; scenarioId?: string | null },
+  options?: {
+    title?: string;
+    scenarioId?: string | null;
+    /** Stored in `chat_messages` (e.g. DLP-redacted). Defaults to trimmed `content`. */
+    persistedContent?: string;
+    /** Merged into `audit_events.payload` for this exchange. */
+    auditPayloadExtras?: Json;
+  },
 ) {
   const trimmed = content.trim();
   if (!trimmed) {
+    throw new ApiError("content is required", 400, "validation_error");
+  }
+
+  const stored = (options?.persistedContent ?? trimmed).trim();
+  if (!stored) {
     throw new ApiError("content is required", 400, "validation_error");
   }
 
@@ -250,7 +262,7 @@ export async function serviceAppendUserMessageAndPlaceholder(
     thread_id: thread.id,
     user_id: userId,
     role: "user",
-    content: trimmed,
+    content: stored,
     metadata: {},
   });
 
@@ -265,16 +277,23 @@ export async function serviceAppendUserMessageAndPlaceholder(
 
   await touchThreadUpdatedAt(supabase, thread.id);
 
+  const basePayload: Json = {
+    userMessageId: userMsg.id,
+    assistantMessageId: assistantMsg.id,
+  };
+  const extras = options?.auditPayloadExtras;
+  const payload: Json =
+    extras && typeof extras === "object" && !Array.isArray(extras)
+      ? { ...basePayload, ...extras }
+      : basePayload;
+
   await appendAuditEvent(supabase, {
     organizationId,
     actorUserId: userId,
     eventType: "chat.message.exchange",
     resourceType: "chat_thread",
     resourceId: thread.id,
-    payload: {
-      userMessageId: userMsg.id,
-      assistantMessageId: assistantMsg.id,
-    },
+    payload,
   });
 
   return {

@@ -31,10 +31,13 @@ function downloadTextFile(filename: string, text: string) {
 
 export function ChatMessageBubble({
   message,
+  isStreaming,
   onRegenerate,
   onEditUser,
 }: {
   message: ChatMessage;
+  /** Показывать мигающий курсор в конце текста ассистента (SSE). */
+  isStreaming?: boolean;
   onRegenerate?: () => void;
   onEditUser?: (text: string) => void;
 }) {
@@ -109,15 +112,20 @@ export function ChatMessageBubble({
   return (
     <div
       className={cn(
-        "flex w-full",
+        "flex w-full gap-2",
         isUser ? "justify-end" : "justify-start",
       )}
     >
+      {!isUser ? (
+        <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--background-secondary))] text-xs font-semibold text-[hsl(var(--foreground))]">
+          A
+        </div>
+      ) : null}
       <div
         className={cn(
           "min-w-0 text-sm",
           isUser
-            ? "ml-auto max-w-[75%] rounded-[var(--radius-md)] rounded-br-sm bg-[hsl(var(--background-tertiary))] px-4 py-2.5 text-[hsl(var(--foreground))]"
+            ? "ml-auto max-w-[75%] rounded-[18px] bg-[var(--color-background-secondary)] px-4 py-2.5 text-[hsl(var(--foreground))]"
             : "max-w-[75%] leading-relaxed text-[hsl(var(--foreground))]",
         )}
       >
@@ -143,7 +151,15 @@ export function ChatMessageBubble({
           </p>
         ) : null}
         {message.role === "assistant" ? (
-          <div className="space-y-1">{renderSegments(collapseText)}</div>
+          <div className="space-y-1">
+            {renderSegments(collapseText)}
+            {isStreaming ? (
+              <span
+                className="ml-0.5 inline-block min-h-[1em] w-2 translate-y-px animate-pulse rounded-sm bg-[hsl(var(--foreground))] align-text-bottom opacity-90"
+                aria-hidden
+              />
+            ) : null}
+          </div>
         ) : (
           <div className="whitespace-pre-wrap">
             {long && !expanded
@@ -224,7 +240,7 @@ export function ChatMessageBubble({
         <div
           className={cn(
             "mt-3 flex flex-wrap items-center gap-0.5 pt-1",
-            isUser ? "justify-end" : "justify-start",
+            isUser ? "justify-end" : "justify-start pl-0.5",
           )}
         >
           <Button

@@ -6,10 +6,12 @@ import { ChatMessageBubble } from "./chat-message-bubble";
 
 export function ChatMessageList({
   messages,
+  streamingMessageId,
   onRegenerateLastAssistant,
   onEditUserMessage,
 }: {
   messages: ChatMessage[];
+  streamingMessageId?: string | null;
   onRegenerateLastAssistant: () => void;
   onEditUserMessage?: (text: string) => void;
 }) {
@@ -19,6 +21,10 @@ export function ChatMessageList({
         <ChatMessageBubble
           key={m.id}
           message={m}
+          isStreaming={
+            m.role === "assistant" &&
+            (streamingMessageId === m.id || Boolean(m.isStreaming))
+          }
           onRegenerate={
             m.role === "assistant" ? onRegenerateLastAssistant : undefined
           }

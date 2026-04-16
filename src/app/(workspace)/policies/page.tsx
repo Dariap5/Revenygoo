@@ -1,5 +1,5 @@
-import { PoliciesAdmin } from "@/components/policies/policies-admin";
+import { PoliciesSecurityPage } from "@/components/policies/policies-security-page";
 
 export default function PoliciesPage() {
-  return <PoliciesAdmin />;
+  return <PoliciesSecurityPage />;
 }

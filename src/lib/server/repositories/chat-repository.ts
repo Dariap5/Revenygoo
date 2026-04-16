@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/server/errors";
-import type { Database } from "@/lib/server/supabase/database.types";
+import type { Database, Json } from "@/lib/server/supabase/database.types";
 
 export async function listThreadsForUserOrg(
   supabase: SupabaseClient<Database>,
@@ -108,6 +108,48 @@ export async function insertMessage(
 
   if (error) {
     throw new ApiError(error.message, 500, "message_insert_failed");
+  }
+  return data;
+}
+
+export async function updateChatMessageContentForUserThread(
+  supabase: SupabaseClient<Database>,
+  params: {
+    messageId: string;
+    threadId: string;
+    organizationId: string;
+    userId: string;
+    content: string;
+    metadata?: Json;
+  },
+) {
+  const thread = await getThreadForUser(
+    supabase,
+    params.threadId,
+    params.organizationId,
+    params.userId,
+  );
+  if (!thread) {
+    throw new ApiError("Thread not found", 404, "thread_not_found");
+  }
+
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .update({
+      content: params.content,
+      metadata: params.metadata ?? {},
+    })
+    .eq("id", params.messageId)
+    .eq("thread_id", params.threadId)
+    .eq("organization_id", params.organizationId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    throw new ApiError(error.message, 500, "message_update_failed");
+  }
+  if (!data) {
+    throw new ApiError("Message not found", 404, "message_not_found");
   }
   return data;
 }

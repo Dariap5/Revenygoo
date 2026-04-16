@@ -30,8 +30,8 @@ export function PersonalizingScreen() {
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      patchWorkspaceSession({ personalizationViewed: true });
-      router.replace("/onboarding/ai-guide");
+      patchWorkspaceSession({ aiGuideCompleted: true });
+      router.replace("/chat");
     }, DELAY_MS);
     return () => window.clearTimeout(t);
   }, [router]);

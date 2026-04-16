@@ -67,3 +67,15 @@ export async function requireOrgMember(
   }
   return hit;
 }
+
+/** Только owner или admin организации. */
+export async function requireOrgAdminAccess(
+  userId: string,
+  organizationId: string,
+): Promise<OrganizationMembership> {
+  const hit = await requireOrgMember(userId, organizationId);
+  if (hit.role !== "owner" && hit.role !== "admin") {
+    throw new ApiError("Требуются права администратора", 403, "admin_required");
+  }
+  return hit;
+}

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { ProfileOnboardingWizard } from "@/components/onboarding/profile-onboarding-wizard";
-import { trySyncWorkspaceSessionFromSupabase } from "@/lib/auth/sync-workspace-from-supabase";
+import { hydrateWorkspaceAuthFromBrowser } from "@/lib/auth/demo-supabase-sign-in";
 import {
   getPostAuthPath,
   readWorkspaceSession,
@@ -17,7 +17,7 @@ export default function ProfileOnboardingPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      await trySyncWorkspaceSessionFromSupabase();
+      await hydrateWorkspaceAuthFromBrowser();
       if (cancelled) return;
       const s = readWorkspaceSession();
       if (!s.authenticated) {

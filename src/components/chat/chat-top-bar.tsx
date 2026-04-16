@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { BookMarked, MoreHorizontal, Trash2 } from "lucide-react";
+import { BookMarked, CircleHelp, MoreHorizontal, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { chatColumnClassName } from "@/lib/chat/chat-column-layout";
 import { mockScenarios } from "@/lib/mock/scenarios";
 
@@ -32,6 +40,41 @@ export function ChatTopBar({
           "box-border flex h-10 max-h-10 min-h-10 items-center justify-end gap-2 overflow-hidden py-1",
         )}
       >
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-muted/80"
+              aria-label="Правила ИИ"
+            >
+              <CircleHelp className="size-4 opacity-70" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent>
+            <SheetHeader>
+              <SheetTitle>Правила использования ИИ</SheetTitle>
+            </SheetHeader>
+            <SheetBody className="space-y-3 text-sm text-muted-foreground">
+              <p>Коротко перед отправкой запроса:</p>
+              <ul className="space-y-2">
+                <li className="flex items-start gap-2">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-border" />
+                  Не отправляйте пароли, токены и API-ключи.
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-border" />
+                  Удаляйте персональные и финансовые данные.
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-border" />
+                  Проверяйте результат ИИ перед отправкой клиенту.
+                </li>
+              </ul>
+            </SheetBody>
+          </SheetContent>
+        </Sheet>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

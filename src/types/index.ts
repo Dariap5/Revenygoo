@@ -21,6 +21,22 @@ export interface Scenario {
   favorite?: boolean;
 }
 
+export type ScenarioTemplateCategory =
+  | "communication"
+  | "code"
+  | "analysis"
+  | "documents";
+
+export interface ScenarioTemplate {
+  id: string;
+  title: string;
+  description: string;
+  category: ScenarioTemplateCategory;
+  promptTemplate: string;
+  isPublic: boolean;
+  organizationId: string | null;
+}
+
 export interface ChatThread {
   id: string;
   title: string;
@@ -36,6 +52,22 @@ export interface ChatThread {
 }
 
 export type MessageRole = "user" | "assistant" | "system";
+
+/** Провайдер для серверного LLM-роутера (таблица org_settings + env). */
+export type LlmProviderId = "openai" | "anthropic" | "openrouter";
+
+export interface OrgLlmSettings {
+  llm_provider: LlmProviderId;
+  llm_api_key: string;
+  llm_model?: string | null;
+  /** База OpenAI-совместимого API, без `/chat/completions` (например `https://routerai.ru/api/v1`). */
+  llm_base_url?: string | null;
+}
+
+export interface LLMChatMessage {
+  role: MessageRole;
+  content: string;
+}
 
 /** Провайдер интерфейса чата (mock UI-режимы). */
 export type ChatWorkspaceProviderId = "openai" | "anthropic" | "google";
@@ -88,6 +120,8 @@ export interface ChatMessage {
   citations?: ChatSourceCitation[];
   /** Карточка документа под ответом (демо). */
   documentCards?: ChatDocumentCard[];
+  /** Ответ ассистента ещё приходит потоком (SSE). */
+  isStreaming?: boolean;
 }
 
 export type KnowledgeSourceType =

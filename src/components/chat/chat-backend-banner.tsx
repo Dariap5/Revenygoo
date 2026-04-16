@@ -14,6 +14,13 @@ export function ChatBackendBanner() {
   } else if (banner.kind === "forbidden") {
     message =
       "Нет доступа к организации или чату. Проверьте membership в Supabase.";
+  } else if (banner.kind === "dlp_blocked") {
+    const list = (banner.dlpTypes ?? [])
+      .filter((x) => x.trim().length > 0)
+      .join(", ");
+    message = list
+      ? `Сообщение заблокировано политикой: ${list}`
+      : "Сообщение заблокировано политикой безопасности.";
   } else {
     message =
       banner.detail?.trim() ||
@@ -32,6 +39,14 @@ export function ChatBackendBanner() {
           className="ml-2 font-medium text-destructive underline underline-offset-2"
         >
           Войти снова
+        </Link>
+      ) : null}
+      {banner.kind === "dlp_blocked" ? (
+        <Link
+          href="/policies"
+          className="ml-2 font-medium text-destructive underline underline-offset-2"
+        >
+          Узнать подробнее
         </Link>
       ) : null}
     </div>

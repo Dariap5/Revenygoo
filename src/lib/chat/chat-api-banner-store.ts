@@ -3,9 +3,10 @@ import { useSyncExternalStore } from "react";
 export type ChatApiBannerState =
   | null
   | {
-      kind: "unauthorized" | "forbidden" | "request_failed";
+      kind: "unauthorized" | "forbidden" | "request_failed" | "dlp_blocked";
       /** Для request_failed — краткая деталь (код и т.п.) */
       detail?: string;
+      dlpTypes?: string[];
     };
 
 let state: ChatApiBannerState = null;

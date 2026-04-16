@@ -1,5 +1,5 @@
-import { AuditLogAdmin } from "@/components/audit/audit-log-admin";
+import { AuditPage } from "@/components/audit/audit-page";
 
-export default function AuditPage() {
-  return <AuditLogAdmin />;
+export default function AuditRoutePage() {
+  return <AuditPage />;
 }

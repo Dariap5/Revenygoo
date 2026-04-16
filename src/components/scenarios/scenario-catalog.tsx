@@ -1,42 +1,73 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { AIModelBadge, Scenario } from "@/types";
-
-import { ScenarioSection } from "./scenario-section";
+import type { ScenarioTemplate, ScenarioTemplateCategory } from "@/types";
 
 import { cn } from "@/lib/utils";
 
-const MODEL_TAGS: { id: "all" | AIModelBadge; label: string }[] = [
+const CATEGORY_CHIPS: { id: "all" | ScenarioTemplateCategory; label: string }[] = [
   { id: "all", label: "Все" },
-  { id: "Auto", label: "Auto" },
-  { id: "GPT", label: "GPT" },
-  { id: "Claude", label: "Claude" },
-  { id: "Gemini", label: "Gemini" },
+  { id: "communication", label: "Коммуникация" },
+  { id: "code", label: "Код" },
+  { id: "analysis", label: "Анализ" },
+  { id: "documents", label: "Документы" },
 ];
 
-export function ScenarioCatalog({ scenarios }: { scenarios: Scenario[] }) {
+type ApiResponse = {
+  scenarios?: ScenarioTemplate[];
+  error?: string;
+};
+
+function cardHref(template: ScenarioTemplate): string {
+  const qs = new URLSearchParams({
+    scenario: template.id,
+    title: template.title,
+    prompt: template.promptTemplate,
+  });
+  return `/chat?${qs.toString()}`;
+}
+
+export function ScenarioCatalog() {
+  const [all, setAll] = useState<ScenarioTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const [modelTag, setModelTag] = useState<"all" | AIModelBadge>("all");
+  const [category, setCategory] = useState<"all" | ScenarioTemplateCategory>("all");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/scenarios", { credentials: "include" });
+      const json = (await res.json().catch(() => ({}))) as ApiResponse;
+      if (cancelled) return;
+      if (!res.ok) {
+        setError(json.error ?? "Не удалось загрузить шаблоны.");
+        setAll([]);
+      } else {
+        setAll(json.scenarios ?? []);
+      }
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return scenarios.filter((x) => {
-      if (modelTag !== "all" && x.modelBadge !== modelTag) return false;
+    return all.filter((x) => {
+      if (category !== "all" && x.category !== category) return false;
       if (!s) return true;
-      return (
-        x.title.toLowerCase().includes(s) ||
-        x.description.toLowerCase().includes(s)
-      );
+      return x.title.toLowerCase().includes(s);
     });
-  }, [q, scenarios, modelTag]);
-
-  const popular = filtered.filter((x) => x.popular);
-  const recent = filtered.filter((x) => x.recent);
-  const favorites = filtered.filter((x) => x.favorite);
+  }, [q, all, category]);
 
   return (
     <div className="space-y-7">
@@ -57,13 +88,13 @@ export function ScenarioCatalog({ scenarios }: { scenarios: Scenario[] }) {
       </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        {MODEL_TAGS.map((t) => {
-          const active = modelTag === t.id;
+        {CATEGORY_CHIPS.map((t) => {
+          const active = category === t.id;
           return (
             <button
               key={t.id}
               type="button"
-              onClick={() => setModelTag(t.id)}
+              onClick={() => setCategory(t.id)}
               className={cn(
                 "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors",
                 active
@@ -77,25 +108,37 @@ export function ScenarioCatalog({ scenarios }: { scenarios: Scenario[] }) {
         })}
       </div>
 
-      {!q.trim() && modelTag === "all" && (
-        <>
-          <ScenarioSection title="Популярные сценарии" scenarios={popular} />
-          <ScenarioSection title="Последние" scenarios={recent} />
-          <ScenarioSection title="Избранные" scenarios={favorites} />
-        </>
-      )}
+      {loading ? <p className="text-sm text-muted-foreground">Загрузка…</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      <ScenarioSection
-        title={
-          q.trim() || modelTag !== "all" ? "Результаты" : "Все сценарии"
-        }
-        scenarios={filtered}
-        emptyLabel={
-          q.trim() || modelTag !== "all"
-            ? "Ничего не найдено. Попробуйте другой запрос или тег."
-            : undefined
-        }
-      />
+      {!loading && !error ? (
+        filtered.length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filtered.map((scenario) => (
+              <div
+                key={scenario.id}
+                className="flex flex-col rounded-[var(--radius-md)] border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-4"
+              >
+                <p className="line-clamp-1 text-sm font-medium text-foreground">
+                  {scenario.title}
+                </p>
+                <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                  {scenario.description}
+                </p>
+                <div className="mt-4">
+                  <Button className="w-full" variant="outline" size="sm" asChild>
+                    <Link href={cardHref(scenario)}>Запустить</Link>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Ничего не найдено. Измените запрос или категорию.
+          </p>
+        )
+      ) : null}
     </div>
   );
 }

@@ -7,11 +7,13 @@ import {
   clearChatApiBanner,
   setChatApiBanner,
 } from "@/lib/chat/chat-api-banner-store";
+import { dlpPreviewTypeLabel } from "@/lib/chat/dlp-preview";
 import type { ChatMessagesResult } from "@/lib/chat/chat-backend-client";
 import {
   fetchChatMessagesFromApi,
   isPersistedChatThreadId,
-  postChatMessageToApi,
+  mapApiMessageToChatMessage,
+  postChatMessageStreamFromApi,
 } from "@/lib/chat/chat-backend-client";
 import {
   DEFAULT_UNIFIED_MODEL,
@@ -25,13 +27,9 @@ import {
   syncChatThreadsFromBackend,
 } from "@/lib/history/chat-threads-storage";
 import type { ChatQuickAction } from "@/lib/mock/chat-quick-actions";
-import type { ChatPromptTemplate } from "@/lib/mock/chat-templates";
+import { mockChatQuickActions } from "@/lib/mock/chat-quick-actions";
 import { mockChatThreads, NEW_CHAT_THREAD_ID } from "@/lib/mock/chats";
-import {
-  emptyThreadStarterCopy,
-  mockMessagesByChatId,
-  newChatEmptyCopy,
-} from "@/lib/mock/messages";
+import { mockMessagesByChatId } from "@/lib/mock/messages";
 import { getKnowledgeSourcesByIds } from "@/lib/mock/knowledge-sources";
 import { getScenarioById } from "@/lib/mock/scenarios";
 import {
@@ -39,10 +37,6 @@ import {
   type SafetyCheckResult,
   safetySystemNotice,
 } from "@/lib/mock/safety-check";
-import {
-  displayNameFromLogin,
-  readWorkspaceSession,
-} from "@/lib/session/workspace-session";
 import type {
   ChatAttachmentPreview,
   ChatMessage,
@@ -57,15 +51,18 @@ import { ChatContextBar } from "./chat-context-bar";
 import { ChatContextPickerDialog } from "./chat-context-picker-dialog";
 import { ChatEmptyState } from "./chat-empty-state";
 import { ChatMessageList } from "./chat-message-list";
-import { ChatQuickActionsRow } from "./chat-quick-actions-row";
 import { ChatTopBar } from "./chat-top-bar";
 import { SafetyReviewDialog } from "./safety-review-dialog";
 
-function firstNameFromSession(): string {
-  const s = readWorkspaceSession();
-  if (!s.login) return "";
-  const full = displayNameFromLogin(s.login);
-  return full.split(/\s+/)[0] ?? "";
+function mapServerDlpTypeLabel(type: string): string {
+  if (type === "API_KEY" || type === "EMAIL" || type === "PHONE" || type === "JWT") {
+    return dlpPreviewTypeLabel(type);
+  }
+  if (type === "CREDIT_CARD") return "банковская карта";
+  if (type === "PASSPORT_RF") return "паспорт";
+  if (type === "SNILS") return "СНИЛС";
+  if (type === "IP_ADDRESS") return "IP-адрес";
+  return type;
 }
 
 function applyChatMessagesFetchResult(
@@ -118,6 +115,8 @@ export function ChatWorkspace({
   const searchParams = useSearchParams();
   const chatParam = searchParams.get("chat");
   const scenarioParam = searchParams.get("scenario");
+  const scenarioTitleParam = searchParams.get("title");
+  const promptParam = searchParams.get("prompt");
 
   const pendingDraftRef = useRef<string | null>(null);
 
@@ -144,16 +143,16 @@ export function ChatWorkspace({
       const s = getScenarioById(sid);
       return {
         id: activeKey,
-        title: s.title,
+        title: scenarioTitleParam?.trim() || s.title,
         scenarioId: s.id,
-        scenarioTitle: s.title,
+        scenarioTitle: scenarioTitleParam?.trim() || s.title,
         updatedAt: new Date().toISOString(),
         modelLabel: s.modelBadge,
         lastMessagePreview: "",
       };
     }
     return threadList[0];
-  }, [threadList, activeKey]);
+  }, [threadList, activeKey, scenarioTitleParam]);
 
   const [unifiedModelId, setUnifiedModelId] = useState<UnifiedChatModelId>(
     DEFAULT_UNIFIED_MODEL,
@@ -171,6 +170,11 @@ export function ChatWorkspace({
   const [assistantOverrides, setAssistantOverrides] = useState<
     Record<string, string>
   >({});
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
+    null,
+  );
+  const streamAssistantIdRef = useRef<string | null>(null);
+  const streamMetaReceivedRef = useRef(false);
   const [safetyOpen, setSafetyOpen] = useState(false);
   const [pendingSafety, setPendingSafety] = useState<SafetyCheckResult | null>(
     null,
@@ -208,6 +212,16 @@ export function ChatWorkspace({
     setAttachments([]);
     setGeminiActiveTools(new Set());
   }, [activeKey]);
+
+  useEffect(() => {
+    const prompt = promptParam?.trim();
+    if (!prompt) return;
+    try {
+      setDraft(decodeURIComponent(prompt));
+    } catch {
+      setDraft(prompt);
+    }
+  }, [activeKey, promptParam]);
 
   useEffect(() => {
     let cancelled = false;
@@ -250,7 +264,7 @@ export function ChatWorkspace({
   const messages = useMemo(
     () =>
       [...baseMessages, ...localMessages].map((m) =>
-        m.role === "assistant" && assistantOverrides[m.id]
+        m.role === "assistant" && m.id in assistantOverrides
           ? { ...m, content: assistantOverrides[m.id]! }
           : m,
       ),
@@ -289,13 +303,6 @@ export function ChatWorkspace({
   const onQuickActionPick = useCallback(
     (action: ChatQuickAction) => {
       applyStarterPrompt(action.prompt, action.scenarioId);
-    },
-    [applyStarterPrompt],
-  );
-
-  const onTemplatePick = useCallback(
-    (template: ChatPromptTemplate) => {
-      applyStarterPrompt(template.promptTemplate, template.scenarioId);
     },
     [applyStarterPrompt],
   );
@@ -402,27 +409,91 @@ export function ChatWorkspace({
         setAttachments([]);
       };
 
-      const posted = await postChatMessageToApi(persistedThreadId, textPayload, {
-        scenarioId: scenarioForApi ?? null,
-        title: activeThread.title,
-      });
+      streamMetaReceivedRef.current = false;
+
+      const posted = await postChatMessageStreamFromApi(
+        persistedThreadId,
+        textPayload,
+        {
+          onMeta: (meta) => {
+            const userApi = meta.messages.find((x) => x.role === "user");
+            const asstApi = meta.messages.find((x) => x.role === "assistant");
+            if (!userApi || !asstApi) return;
+            streamMetaReceivedRef.current = true;
+            const userM = mapApiMessageToChatMessage(userApi);
+            const asstM = mapApiMessageToChatMessage(asstApi);
+            streamAssistantIdRef.current = asstM.id;
+            setStreamingMessageId(asstM.id);
+            clearComposer();
+            setServerMessages((prev) => [
+              ...prev,
+              userM,
+              { ...asstM, content: "", isStreaming: true },
+            ]);
+            if (needNewPersistedId) {
+              const qs = new URLSearchParams({ chat: persistedThreadId });
+              if (scenarioForApi) qs.set("scenario", scenarioForApi);
+              router.replace(`/chat?${qs.toString()}`);
+            }
+          },
+          onDelta: (t) => {
+            const sid = streamAssistantIdRef.current;
+            if (!sid) return;
+            setAssistantOverrides((prev) => ({
+              ...prev,
+              [sid]: (prev[sid] ?? "") + t,
+            }));
+          },
+          onDone: () => {
+            const sid = streamAssistantIdRef.current;
+            streamAssistantIdRef.current = null;
+            setStreamingMessageId(null);
+            if (sid) {
+              setAssistantOverrides((prev) => {
+                const next = { ...prev };
+                delete next[sid];
+                return next;
+              });
+            }
+          },
+          onStreamError: () => {
+            streamAssistantIdRef.current = null;
+            setStreamingMessageId(null);
+          },
+        },
+        {
+          scenarioId: scenarioForApi ?? null,
+          title: activeThread.title,
+        },
+      );
 
       if (posted.kind === "ok") {
         clearChatApiBanner();
-        if (needNewPersistedId) {
-          const qs = new URLSearchParams({ chat: persistedThreadId });
-          if (scenarioForApi) qs.set("scenario", scenarioForApi);
-          router.replace(`/chat?${qs.toString()}`);
-        }
         await syncChatThreadsFromBackend();
         const full = await fetchChatMessagesFromApi(persistedThreadId);
         applyChatMessagesFetchResult(full, setServerMessages);
-        clearComposer();
+        return;
+      }
+
+      if (posted.kind === "stream_error") {
+        setChatApiBanner({
+          kind: "request_failed",
+          detail: posted.message,
+        });
+        const full = await fetchChatMessagesFromApi(persistedThreadId);
+        applyChatMessagesFetchResult(full, setServerMessages);
         return;
       }
 
       if (posted.kind === "unauthorized") {
         setChatApiBanner({ kind: "unauthorized" });
+        return;
+      }
+      if (posted.kind === "dlp_blocked") {
+        setChatApiBanner({
+          kind: "dlp_blocked",
+          dlpTypes: posted.types.map(mapServerDlpTypeLabel),
+        });
         return;
       }
       if (posted.kind === "forbidden") {
@@ -434,6 +505,18 @@ export function ChatWorkspace({
           kind: "request_failed",
           detail: `Сообщение не отправлено (HTTP ${posted.status}).`,
         });
+        return;
+      }
+
+      if (posted.kind === "network" && streamMetaReceivedRef.current) {
+        setChatApiBanner({
+          kind: "request_failed",
+          detail: "Соединение прервано до завершения ответа.",
+        });
+        const full = await fetchChatMessagesFromApi(persistedThreadId);
+        applyChatMessagesFetchResult(full, setServerMessages);
+        setStreamingMessageId(null);
+        streamAssistantIdRef.current = null;
         return;
       }
 
@@ -514,13 +597,6 @@ export function ChatWorkspace({
     setAttachments((prev) => [...prev, ...next]);
   }, []);
 
-  const fn = firstNameFromSession();
-  const emptyGreeting = fn ? `Добрый день, ${fn}` : "Добрый день";
-
-  const emptyCopy =
-    activeThread.id === NEW_CHAT_THREAD_ID
-      ? newChatEmptyCopy
-      : emptyThreadStarterCopy;
 
   const onEditUserMessage = useCallback((text: string) => {
     setDraft(text);
@@ -566,17 +642,29 @@ export function ChatWorkspace({
             <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
               <div className="flex min-h-0 flex-1 flex-col">
                 {messages.length === 0 ? (
-                  <ChatEmptyState
-                    brandLabel="Revenygo"
-                    greeting={emptyGreeting}
-                    subtitle={
-                      activeThread.id === NEW_CHAT_THREAD_ID
-                        ? undefined
-                        : emptyCopy.description
-                    }
-                    minimal={activeThread.id === NEW_CHAT_THREAD_ID}
-                  >
-                    <>
+                  <div className="flex h-full min-h-0 flex-1 flex-col">
+                    <ChatEmptyState
+                      brandLabel="Revenygo"
+                      greeting="Чем могу помочь?"
+                      minimal
+                      className="pb-0"
+                    >
+                      <div className="mx-auto w-full max-w-2xl">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          {mockChatQuickActions.slice(0, 4).map((action) => (
+                            <button
+                              key={action.id}
+                              type="button"
+                              onClick={() => onQuickActionPick(action)}
+                              className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-4 py-3 text-left text-sm text-[hsl(var(--foreground))] transition-colors hover:bg-[hsl(var(--background-secondary))]"
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </ChatEmptyState>
+                    <div className="mt-auto w-full border-t border-[hsl(var(--border))] pt-3">
                       <ChatComposer
                         variant="empty"
                         value={draft}
@@ -598,17 +686,12 @@ export function ChatWorkspace({
                         geminiActiveTools={geminiActiveTools}
                         onToggleGeminiTool={onToggleGeminiTool}
                       />
-                      <div className="mt-4 w-full border-t border-[hsl(var(--border))] pt-4">
-                        <ChatQuickActionsRow
-                          onQuickAction={onQuickActionPick}
-                          onTemplate={onTemplatePick}
-                        />
-                      </div>
-                    </>
-                  </ChatEmptyState>
+                    </div>
+                  </div>
                 ) : (
                   <ChatMessageList
                     messages={messages}
+                    streamingMessageId={streamingMessageId}
                     onRegenerateLastAssistant={onRegenerate}
                     onEditUserMessage={onEditUserMessage}
                   />

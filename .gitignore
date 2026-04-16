@@ -25,5 +25,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# env
+# env (никогда не коммитить секреты)
+.env
 .env*.local
+!.env.example
+
+# Supabase CLI (локальная привязка к проекту)
+supabase/.temp/

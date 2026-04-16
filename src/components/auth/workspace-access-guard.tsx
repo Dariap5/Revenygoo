@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { trySyncWorkspaceSessionFromSupabase } from "@/lib/auth/sync-workspace-from-supabase";
+import { hydrateWorkspaceAuthFromBrowser } from "@/lib/auth/demo-supabase-sign-in";
 import {
   readWorkspaceSession,
   workspaceEntryRedirect,
@@ -23,7 +23,7 @@ export function WorkspaceAccessGuard({ children }: { children: ReactNode }) {
     if (!hydrated) return;
     let cancelled = false;
     (async () => {
-      await trySyncWorkspaceSessionFromSupabase();
+      await hydrateWorkspaceAuthFromBrowser();
       if (!cancelled) {
         setSessionReady(true);
       }
